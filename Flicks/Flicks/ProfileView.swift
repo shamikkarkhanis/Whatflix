@@ -10,7 +10,6 @@ import UIKit
 
 struct ProfileView: View {
     @EnvironmentObject var userState: UserState
-    private let name = "Shamik Karkhanis"
 
     // Cache the gradient and colors so we don’t recompute during body updates
     @State private var backgroundGradient: LinearGradient?
@@ -72,7 +71,7 @@ struct ProfileView: View {
             }
 
             VStack(alignment: .leading, spacing: 6) {
-                Text(name)
+                Text(displayName)
                     .font(.system(size: 22, weight: .semibold))
                     .foregroundStyle(.primary)
 
@@ -150,6 +149,11 @@ struct ProfileView: View {
     }
 
     // MARK: - Helpers
+
+    private var displayName: String {
+        let trimmed = userState.profileName.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? "Profile" : trimmed
+    }
 
     private func populateGradientIfNeeded() {
         // Only compute once per appearance unless you want it dynamic

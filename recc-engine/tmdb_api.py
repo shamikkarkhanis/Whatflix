@@ -4,8 +4,13 @@ This module replaces the 'tmdbsimple' dependency with a direct requests-based cl
 to avoid conflicts and maintain a lightweight implementation.
 """
 
-import requests
+import logging
 from typing import Optional, List, Dict, Any
+
+import requests
+
+
+logger = logging.getLogger("recc-engine.tmdb")
 
 
 class TMDBClient:
@@ -40,7 +45,7 @@ class TMDBClient:
                 data = self.movie_details(mid)
                 results.append(data)
             except Exception as e:
-                print(f"Failed to fetch details for {mid}: {e}")
+                logger.warning("Failed to fetch details for %s: %s", mid, e)
         return results
 
     def keywords(self, movie_id: int) -> Dict[str, Any]:
@@ -52,3 +57,6 @@ class TMDBClient:
         params example: {"primary_release_year": 1999, "with_genres": 27}
         """
         return self._get("discover/movie", params=params)
+
+    def popular_movies(self, page: int = 1) -> Dict[str, Any]:
+        return self._get("movie/popular", params={"page": page})

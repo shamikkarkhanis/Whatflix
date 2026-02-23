@@ -77,8 +77,8 @@ def save_user_profile(path, profile):
                 data = json.load(f)
                 if isinstance(data, dict):
                     is_list = False
-            except:
-                pass 
+            except (json.JSONDecodeError, OSError):
+                pass
     
     output_data = [profile] if is_list else profile
     

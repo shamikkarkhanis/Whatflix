@@ -2,6 +2,7 @@ import SwiftUI
 
 @MainActor
 class UserState: ObservableObject {
+    @Published var profileName: String = ""
     @Published var history: [Movie] = []
     @Published var watchlist: [Movie] = []
     @Published var genres: [String] = []
@@ -24,7 +25,7 @@ class UserState: ObservableObject {
     var shownCount: Int = 0 // Tracks how many movies the user has scrolled past in this session
     
     private var allFetchedMovies: [Movie] = []
-    @AppStorage("authenticatedUserId") private var currentUserId: String = "Shamik"
+    @AppStorage("authenticatedUserId") private var currentUserId: String = ""
     private var ratingSessionCount = 0
     private var shownMovieIds: Set<Int> = []
     
@@ -41,6 +42,11 @@ class UserState: ObservableObject {
     
     private let pendingActions = PendingActionsQueue()
 
+    private var activeUserId: String? {
+        let trimmed = currentUserId.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
     init() {
         Task {
             await fetchUserProfile()
@@ -52,6 +58,7 @@ class UserState: ObservableObject {
         guard !isProcessingQueue else { return }
         
         Task {
+            guard let userId = activeUserId else { return }
             guard await !pendingActions.isEmpty else { return }
             isProcessingQueue = true
             
@@ -64,7 +71,7 @@ class UserState: ObservableObject {
                     switch action {
                     case .rate(let movieId, let rating, let title):
                         print("[RetryQueue] Retrying rating for '\(title)'...")
-                        try await APIService.shared.rateMovie(userId: currentUserId, movieId: movieId, rating: rating)
+                        try await APIService.shared.rateMovie(userId: userId, movieId: movieId, rating: rating)
                         ratingSessionCount += 1
                         if ratingSessionCount % 3 == 0 {
                             print("[RetryQueue] Triggering refill fetch from queued rating...")
@@ -73,15 +80,15 @@ class UserState: ObservableObject {
                         
                     case .watchlistAdd(let movieId, let title):
                         print("[RetryQueue] Retrying watchlist add for '\(title)'...")
-                        try await APIService.shared.addToWatchlist(userId: currentUserId, movieId: movieId)
+                        try await APIService.shared.addToWatchlist(userId: userId, movieId: movieId)
                         
                     case .watchlistRemove(let movieId, let title):
                         print("[RetryQueue] Retrying watchlist remove for '\(title)'...")
-                        try await APIService.shared.removeFromWatchlist(userId: currentUserId, movieId: movieId)
+                        try await APIService.shared.removeFromWatchlist(userId: userId, movieId: movieId)
                         
                     case .syncShown(let movieIds):
                         print("[RetryQueue] Retrying sync for \(movieIds.count) shown movies...")
-                        try await APIService.shared.syncShownMovies(userId: currentUserId, movieIds: movieIds)
+                        try await APIService.shared.syncShownMovies(userId: userId, movieIds: movieIds)
                     }
                     
                     print("[RetryQueue] Action successful. Removing from queue.")
@@ -102,10 +109,12 @@ class UserState: ObservableObject {
     @Published var hasCompletedOnboarding: Bool = false
     
     func fetchUserProfile() async -> Bool {
+        guard let userId = activeUserId else { return false }
         do {
-            let profile = try await APIService.shared.fetchUserProfile(for: currentUserId)
+            let profile = try await APIService.shared.fetchUserProfile(for: userId)
             
             print("Profile fetched: \(profile.name)")
+            self.profileName = profile.name
             
             // Check if user has completed onboarding (has personas)
             let hasPersonas = !(profile.personas?.isEmpty ?? true)
@@ -162,6 +171,9 @@ class UserState: ObservableObject {
             return true
         } catch {
             print("Failed to fetch user profile: \(error)")
+            if profileName.isEmpty {
+                profileName = userId
+            }
             // Fallback: fetch recommendations anyway
             if recommendations.isEmpty {
                  await fetchRecommendations()
@@ -297,10 +309,11 @@ class UserState: ObservableObject {
     // MARK: - Profile Sync & Recommendations
 
     func syncUserProfile(personas: [String] = []) async {
+        guard let userId = activeUserId else { return }
         do {
             print("[LiveRecs] Performing bulk profile sync...")
             // 1. Upload the entire local state to create/reset the profile on the backend
-            try await APIService.shared.createProfile(name: currentUserId, genres: genres, movies: history, personas: personas)
+            try await APIService.shared.createProfile(name: userId, genres: genres, movies: history, personas: personas)
             print("[LiveRecs] Profile bulk sync successful.")
             
             // 2. Fetch fresh recommendations based on the new profile
@@ -311,13 +324,14 @@ class UserState: ObservableObject {
     }
     
     func fetchRecommendations(isLiveRefill: Bool = false) async {
+        guard let userId = activeUserId else { return }
         guard !isLoading else { return }
         isLoading = true
         defer { isLoading = false }
         
         print("[LiveRecs] Fetching recommendations (Live Refill: \(isLiveRefill))...")
         do {
-            let fetchedMovies = try await APIService.shared.getRecommendations(for: currentUserId)
+            let fetchedMovies = try await APIService.shared.getRecommendations(for: userId)
             
             if isLiveRefill {
                 print("[LiveRecs] Received \(fetchedMovies.count) candidates.")

@@ -88,7 +88,9 @@ def apple_auth(request: AppleAuthRequest):
         apple_keys_url = "https://appleid.apple.com/auth/keys"
 
         # Fetch Apple's public keys
-        key_payload = requests.get(apple_keys_url).json()
+        key_response = requests.get(apple_keys_url, timeout=10)
+        key_response.raise_for_status()
+        key_payload = key_response.json()
         keys = key_payload.get("keys", [])
 
         # Get the kid from the header
@@ -169,7 +171,10 @@ def apple_auth(request: AppleAuthRequest):
                 logger.info(f"Created new user profile: {user_id}")
 
         # 3. Generate Session Token
-        secret_key = os.getenv("JWT_SECRET_KEY", "dev-secret")
+        secret_key = os.getenv("JWT_SECRET_KEY")
+        if not secret_key:
+            logger.warning("JWT_SECRET_KEY is not set; using development fallback secret")
+            secret_key = "dev-secret"
         # Standard claims
         session_payload = {
             "sub": user_id,
@@ -185,6 +190,8 @@ def apple_auth(request: AppleAuthRequest):
             "needs_onboarding": len(profile.get("personas", [])) == 0,
         }
 
+    except HTTPException:
+        raise
     except jwt.ExpiredSignatureError:
         raise HTTPException(status_code=401, detail="Token expired")
     except jwt.InvalidTokenError as e:
@@ -332,9 +339,9 @@ def encode_user(user_data: UserCreate):
                 emb = res["embeddings"][0]
                 if emb is not None and len(emb) > 0:
                     persona_embeddings_list.append(emb)
-                print(f"Loaded persona embedding for {p_id}")
+                logger.info("Loaded persona embedding for %s", p_id)
             except Exception as e:
-                print(f"Warning: Persona {p_id} not found: {e}")
+                logger.warning("Persona %s not found: %s", p_id, e)
 
         if not persona_embeddings_list:
             raise HTTPException(status_code=400, detail="No valid personas found.")
@@ -417,6 +424,8 @@ def add_to_watchlist(user_id: str, request: WatchlistRequest):
             file_path, request.movie_id, "watchlist"
         )
         return {"message": "Added to watchlist", "data": updated_profile["data"]}
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -434,6 +443,8 @@ def remove_from_watchlist(user_id: str, movie_id: int):
 
         updated_profile = user.update_user_data(file_path, movie_id, "remove_watchlist")
         return {"message": "Removed from watchlist", "data": updated_profile["data"]}
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -493,8 +504,10 @@ def rate_movie(user_id: str, request: RatingRequest):
                     user_id, query_text, embedding, updated_profile
                 )
             except Exception as tmdb_error:
-                print(
-                    f"Warning: Failed to fetch keywords or re-embed for movie {request.movie_id}: {tmdb_error}"
+                logger.warning(
+                    "Failed to fetch keywords or re-embed for movie %s: %s",
+                    request.movie_id,
+                    tmdb_error,
                 )
                 # We don't fail the request, just the optimization
 
@@ -503,6 +516,8 @@ def rate_movie(user_id: str, request: RatingRequest):
             "data": updated_profile["data"],
         }
 
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -517,11 +532,11 @@ def sync_user_data(user_id: str, request: SyncRequest):
     Syncs the list of movies already shown to the user on the frontend.
     """
     try:
-        print(f"[Backend] Syncing shown movies for user: {user_id}")
+        logger.info("Syncing shown movies for user: %s", user_id)
         validate_user_id(user_id)
         file_path = f"users/{user_id}.json"
         if not os.path.exists(file_path):
-            print(f"[Backend] Profile not found for sync: {file_path}")
+            logger.info("Profile not found for sync: %s", file_path)
             raise HTTPException(status_code=404, detail="User profile not found")
 
         profile = user.load_user_profile(file_path)
@@ -533,15 +548,17 @@ def sync_user_data(user_id: str, request: SyncRequest):
         profile["data"]["shown"] = list(current_shown)
 
         user.save_user_profile(file_path, profile)
-        print(
-            f"[Backend] Sync successful. Total shown now: {len(profile['data']['shown'])}"
+        logger.info(
+            "Sync successful. Total shown now: %d", len(profile["data"]["shown"])
         )
         return {
             "message": "Sync successful",
             "shown_count": len(profile["data"]["shown"]),
         }
+    except HTTPException:
+        raise
     except Exception as e:
-        print(f"[Backend] Sync error: {e}")
+        logger.exception("Sync error")
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -564,7 +581,7 @@ def get_recommendations(
     Excludes movies the user has already seen or interacted with.
     """
     try:
-        print(f"[Backend] Fetching recommendations for: {user_id}")
+        logger.info("Fetching recommendations for: %s", user_id)
         validate_user_id(user_id)
         embedding = None
         filter_genres = []
@@ -587,7 +604,7 @@ def get_recommendations(
                     + data.get("history", [])
                 )
             )
-            print(f"[Backend] Loaded profile. Exclusion list size: {len(exclude_ids)}")
+            logger.info("Loaded profile. Exclusion list size: %d", len(exclude_ids))
             if not genres:
                 filter_genres = profile.get("genres", [])
 
@@ -606,7 +623,7 @@ def get_recommendations(
                 user_keywords_list = [k for k, v in sorted_kws[:100]]
 
         else:
-            print(f"[Backend] Profile file NOT FOUND: {file_path}")
+            logger.info("Profile file not found: %s", file_path)
 
         # 2. Try to get embedding from DB
         try:
@@ -615,7 +632,7 @@ def get_recommendations(
         except ValueError:
             # If not in DB, encode from profile
             if profile:
-                print(f"[Backend] Embedding not in DB. Encoding from profile...")
+                logger.info("Embedding not in DB. Encoding from profile...")
                 query_text = user.build_user_text(profile)
                 embedding = user.encode_user_text(query_text)
                 user.upsert_user_profile(user_id, query_text, embedding, profile)
@@ -648,7 +665,7 @@ def get_recommendations(
             metadatas = results["metadatas"][0]
             distances = results["distances"][0]
 
-            print(f"[Backend] Engine returned {len(ids)} candidates after exclusion.")
+            logger.info("Engine returned %d candidates after exclusion", len(ids))
 
             for idx, movie_id in enumerate(ids):
                 meta = metadatas[idx]

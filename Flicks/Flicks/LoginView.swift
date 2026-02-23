@@ -73,7 +73,7 @@ struct LoginView: View {
                     Button(action: {
                         authManager.loginAsDev()
                     }) {
-                        Text("Dev: Login as Shamik")
+                        Text("Dev: Login as \(Configuration.devUserId)")
                             .font(.system(size: 16, weight: .medium))
                             .foregroundColor(.white.opacity(0.6))
                             .underline()
