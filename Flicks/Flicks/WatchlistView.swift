@@ -8,7 +8,7 @@ struct WatchlistView: View {
     
     @EnvironmentObject var userState: UserState
 
-    // bind scroll position to a Movie.ID
+    // bind scroll position to a Movie.ID (Int)
     @State private var scrollPosition: Movie.ID?
     @State private var isSearching = false
     @State private var query = ""
@@ -17,7 +17,7 @@ struct WatchlistView: View {
 
     // Dynamic background state
     @State private var backgroundGradient: LinearGradient = AppStyle.brandGradient
-    @State private var currentTopMovieID: UUID?
+    @State private var currentTopMovieID: Int?
 
     private let vibes = ["Cozy", "Sci-Fi", "Epic", "Feel-good", "Dark", "Romantic", "Nostalgic"] // dynamic based on user history
 
@@ -77,7 +77,7 @@ struct WatchlistView: View {
         }
     }
 
-    private func updateBackground(for movieID: UUID) {
+    private func updateBackground(for movieID: Int) {
         guard let movie = movies.first(where: { $0.id == movieID }) else { return }
         
         if movie.imageName.hasPrefix("http"), let url = URL(string: movie.imageName) {
@@ -126,8 +126,8 @@ struct WatchlistView: View {
 }
 
 struct MovieScrollPreferenceKey: PreferenceKey {
-    static var defaultValue: [UUID: CGFloat] = [:]
-    static func reduce(value: inout [UUID: CGFloat], nextValue: () -> [UUID: CGFloat]) {
+    static var defaultValue: [Int: CGFloat] = [:]
+    static func reduce(value: inout [Int: CGFloat], nextValue: () -> [Int: CGFloat]) {
         value.merge(nextValue(), uniquingKeysWith: { $1 })
     }
 }

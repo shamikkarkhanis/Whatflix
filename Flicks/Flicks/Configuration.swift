@@ -17,7 +17,7 @@ enum Configuration {
            !override.isEmpty {
             return override
         }
-        return "http://localhost:8000"
+        return "http://192.168.1.18:8000"
         #else
         return "https://api.flicks.app"
         #endif
