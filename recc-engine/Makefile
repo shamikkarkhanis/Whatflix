@@ -1,6 +1,6 @@
 UV ?= uv
 
-.PHONY: help sync sync-dev lock run test test-backend test-routes test-syntax
+.PHONY: help sync sync-dev lock run migrate-users test test-backend test-routes test-syntax
 
 help:
 	@echo "Available targets:"
@@ -8,6 +8,7 @@ help:
 	@echo "  make sync-dev     - Install runtime + dev/test dependencies via uv"
 	@echo "  make lock         - Refresh uv.lock"
 	@echo "  make run          - Run API server with uv"
+	@echo "  make migrate-users - Migrate legacy users/*.json profiles to SQLite"
 	@echo "  make test         - Run backend test suite"
 	@echo "  make test-backend - Run all backend unittest tests"
 	@echo "  make test-routes  - Run lightweight route tests"
@@ -24,6 +25,9 @@ lock:
 
 run:
 	$(UV) run uvicorn app:app --host 0.0.0.0 --port 8000 --reload
+
+migrate-users:
+	$(UV) run python migrate_user_profiles_to_sqlite.py --delete-json
 
 test: test-backend
 

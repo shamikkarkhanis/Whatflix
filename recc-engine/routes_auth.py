@@ -3,7 +3,6 @@ import os
 import time
 
 import jwt
-import portalocker
 import requests
 from fastapi import APIRouter, HTTPException
 from jwt.algorithms import RSAAlgorithm
@@ -52,46 +51,40 @@ def apple_auth(request: AppleAuthRequest):
             raise HTTPException(status_code=401, detail="Invalid token: no sub claim")
 
         user_id = user_sub
-        file_path = f"users/{user_id}.json"
-        lock_file = f"users/{user_id}.lock"
-
-        os.makedirs("users", exist_ok=True)
         profile = None
+        if user.user_profile_exists(user_id):
+            try:
+                profile = user.load_user_profile(user_id)
+            except Exception as e:
+                logger.error("Failed to load profile for %s: %s", user_id, e)
+                raise HTTPException(status_code=500, detail="Profile load error")
+        else:
+            name_part = "User"
+            if request.fullName:
+                given = request.fullName.get("givenName", "")
+                family = request.fullName.get("familyName", "")
+                parts = [p for p in [given, family] if p]
+                if parts:
+                    name_part = " ".join(parts)
 
-        with portalocker.Lock(lock_file, timeout=5):
-            if os.path.exists(file_path):
-                try:
-                    profile = user.load_user_profile(file_path)
-                except Exception as e:
-                    logger.error("Failed to load profile for %s: %s", user_id, e)
-                    raise HTTPException(status_code=500, detail="Profile load error")
-            else:
-                name_part = "User"
-                if request.fullName:
-                    given = request.fullName.get("givenName", "")
-                    family = request.fullName.get("familyName", "")
-                    parts = [p for p in [given, family] if p]
-                    if parts:
-                        name_part = " ".join(parts)
-
-                profile = {
-                    "id": user_id,
-                    "name": name_part,
-                    "email": request.email or payload.get("email"),
-                    "genres": [],
-                    "data": {
-                        "liked": [],
-                        "disliked": [],
-                        "neutral": [],
-                        "watchlist": [],
-                        "history": [],
-                        "shown": [],
-                    },
-                    "keywords": {},
-                    "personas": [],
-                }
-                user.save_user_profile(file_path, profile)
-                logger.info("Created new user profile: %s", user_id)
+            profile = {
+                "id": user_id,
+                "name": name_part,
+                "email": request.email or payload.get("email"),
+                "genres": [],
+                "data": {
+                    "liked": [],
+                    "disliked": [],
+                    "neutral": [],
+                    "watchlist": [],
+                    "history": [],
+                    "shown": [],
+                },
+                "keywords": {},
+                "personas": [],
+            }
+            user.save_user_profile(user_id, profile)
+            logger.info("Created new user profile: %s", user_id)
 
         secret_key = os.getenv("JWT_SECRET_KEY")
         if not secret_key:

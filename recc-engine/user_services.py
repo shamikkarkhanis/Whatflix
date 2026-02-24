@@ -1,5 +1,4 @@
 import json
-import os
 from typing import Optional
 
 import numpy as np
@@ -11,16 +10,11 @@ from api_schemas import RatingRequest, SyncRequest, UserCreate, WatchlistRequest
 from app_shared import logger, tmdb_client
 
 
-def _user_profile_path(user_id: str) -> str:
-    return f"users/{user_id}.json"
-
-
-def _require_user_file(user_id: str) -> str:
+def _require_user_profile(user_id: str) -> str:
     validate_user_id(user_id)
-    file_path = _user_profile_path(user_id)
-    if not os.path.exists(file_path):
+    if not user.user_profile_exists(user_id):
         raise HTTPException(status_code=404, detail="User profile not found")
-    return file_path
+    return user_id
 
 
 def _build_initial_profile(user_data: UserCreate) -> dict:
@@ -68,8 +62,7 @@ def encode_user_profile(user_data: UserCreate) -> dict:
         profile = _build_initial_profile(user_data)
 
         validate_user_id(user_data.name)
-        file_path = _user_profile_path(user_data.name)
-        user.save_user_profile(file_path, profile)
+        user.save_user_profile(user_data.name, profile)
 
         query_text = user.build_user_text(profile)
         user.upsert_user_profile(user_data.name, query_text, final_embedding, profile)
@@ -85,17 +78,17 @@ def encode_user_profile(user_data: UserCreate) -> dict:
 
 
 def get_user_profile(user_id: str) -> dict:
-    file_path = _require_user_file(user_id)
+    profile_ref = _require_user_profile(user_id)
     try:
-        return user.load_user_profile(file_path)
+        return user.load_user_profile(profile_ref)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
 def add_to_watchlist(user_id: str, request: WatchlistRequest) -> dict:
     try:
-        file_path = _require_user_file(user_id)
-        updated_profile = user.update_user_data(file_path, request.movie_id, "watchlist")
+        profile_ref = _require_user_profile(user_id)
+        updated_profile = user.update_user_data(profile_ref, request.movie_id, "watchlist")
         return {"message": "Added to watchlist", "data": updated_profile["data"]}
     except HTTPException:
         raise
@@ -105,8 +98,8 @@ def add_to_watchlist(user_id: str, request: WatchlistRequest) -> dict:
 
 def remove_from_watchlist(user_id: str, movie_id: int) -> dict:
     try:
-        file_path = _require_user_file(user_id)
-        updated_profile = user.update_user_data(file_path, movie_id, "remove_watchlist")
+        profile_ref = _require_user_profile(user_id)
+        updated_profile = user.update_user_data(profile_ref, movie_id, "remove_watchlist")
         return {"message": "Removed from watchlist", "data": updated_profile["data"]}
     except HTTPException:
         raise
@@ -122,14 +115,14 @@ def rate_movie(user_id: str, request: RatingRequest) -> dict:
         )
 
     try:
-        file_path = _require_user_file(user_id)
+        profile_ref = _require_user_profile(user_id)
         action_map = {"like": "liked", "dislike": "disliked", "neutral": "neutral"}
         updated_profile = user.update_user_data(
-            file_path, request.movie_id, action_map[request.rating]
+            profile_ref, request.movie_id, action_map[request.rating]
         )
 
         if request.rating == "like":
-            _refresh_profile_after_like(user_id, file_path, request.movie_id, updated_profile)
+            _refresh_profile_after_like(user_id, profile_ref, request.movie_id, updated_profile)
 
         return {"message": f"Movie rated {request.rating}", "data": updated_profile["data"]}
     except HTTPException:
@@ -139,7 +132,7 @@ def rate_movie(user_id: str, request: RatingRequest) -> dict:
 
 
 def _refresh_profile_after_like(
-    user_id: str, file_path: str, movie_id: int, updated_profile: dict
+    user_id: str, profile_ref: str, movie_id: int, updated_profile: dict
 ) -> None:
     try:
         kw_resp = tmdb_client.keywords(movie_id)
@@ -150,7 +143,7 @@ def _refresh_profile_after_like(
         updated_keywords_dict = update_keyword_counts(current_keywords_data, new_kws)
         updated_profile["keywords"] = updated_keywords_dict
 
-        user.save_user_profile(file_path, updated_profile)
+        user.save_user_profile(profile_ref, updated_profile)
 
         query_text = user.build_user_text(updated_profile)
         embedding = user.encode_user_text(query_text)
@@ -166,15 +159,15 @@ def _refresh_profile_after_like(
 def sync_shown(user_id: str, request: SyncRequest) -> dict:
     try:
         logger.info("Syncing shown movies for user: %s", user_id)
-        file_path = _require_user_file(user_id)
-        profile = user.load_user_profile(file_path)
+        profile_ref = _require_user_profile(user_id)
+        profile = user.load_user_profile(profile_ref)
 
         current_shown = set(profile["data"].get("shown", []))
         incoming_ids = set(request.shown_ids)
         current_shown.update(incoming_ids)
         profile["data"]["shown"] = list(current_shown)
 
-        user.save_user_profile(file_path, profile)
+        user.save_user_profile(profile_ref, profile)
         logger.info("Sync successful. Total shown now: %d", len(profile["data"]["shown"]))
         return {
             "message": "Sync successful",
@@ -201,11 +194,10 @@ def get_recommendations(
         filter_genres = []
         exclude_ids = []
 
-        file_path = _user_profile_path(user_id)
         profile = None
         user_keywords_list = []
-        if os.path.exists(file_path):
-            profile = user.load_user_profile(file_path)
+        if user.user_profile_exists(user_id):
+            profile = user.load_user_profile(user_id)
             data = profile.get("data", {})
             exclude_ids = list(
                 set(
@@ -229,7 +221,7 @@ def get_recommendations(
                 )
                 user_keywords_list = [k for k, _ in sorted_kws[:100]]
         else:
-            logger.info("Profile file not found: %s", file_path)
+            logger.info("Profile not found in SQLite for user_id=%s", user_id)
 
         try:
             db_result = user.get_profile_from_db(user_id)

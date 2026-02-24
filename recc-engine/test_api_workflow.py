@@ -4,6 +4,7 @@ import subprocess
 import os
 import signal
 import json
+import sqlite3
 
 BASE_URL = "http://localhost:8000"
 TEST_USER = "test_bot_999"
@@ -101,10 +102,12 @@ def main():
     print("\nShutting down server...")
     os.killpg(os.getpgid(server_process.pid), signal.SIGTERM)
     
-    user_file = f"users/{TEST_USER}.json"
-    if os.path.exists(user_file):
-        os.remove(user_file)
-        print(f"Cleaned up test user file: {user_file}")
+    db_path = "data/user_profiles.sqlite3"
+    if os.path.exists(db_path):
+        with sqlite3.connect(db_path) as conn:
+            conn.execute("DELETE FROM user_profiles WHERE user_id = ?", (TEST_USER,))
+            conn.commit()
+        print(f"Cleaned up test user from SQLite: {TEST_USER}")
 
 if __name__ == "__main__":
     main()

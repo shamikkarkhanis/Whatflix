@@ -12,6 +12,13 @@ uv sync --extra test --extra dev
 make run
 ```
 
+User profiles are now stored in SQLite at `data/user_profiles.sqlite3`.
+To migrate legacy `users/*.json` profiles and remove the JSON files:
+
+```bash
+make migrate-users
+```
+
 ### Tests
 
 ```bash
