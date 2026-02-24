@@ -24,6 +24,18 @@ struct BatchMoviesRequest: Codable {
     let movie_ids: [Int]
 }
 
+struct CreateCustomListRequest: Codable {
+    let name: String
+}
+
+struct RenameCustomListRequest: Codable {
+    let name: String
+}
+
+struct CustomListMovieRequest: Codable {
+    let movie_id: Int
+}
+
 enum APIError: Error {
     case invalidURL
     case networkError(Error)
@@ -250,6 +262,129 @@ class APIService {
         
         return try JSONDecoder().decode([PersonaDTO].self, from: data)
     }
+
+    func fetchCustomLists(userId: String) async throws -> [CustomListSummaryDTO] {
+        guard let encodedUserId = userId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed),
+              let url = URL(string: "\(baseURL)/users/\(encodedUserId)/lists") else {
+            throw APIError.invalidURL
+        }
+
+        let (data, response) = try await URLSession.shared.data(from: url)
+        if let httpResponse = response as? HTTPURLResponse,
+           !(200...299).contains(httpResponse.statusCode) {
+            throw APIError.serverError(statusCode: httpResponse.statusCode)
+        }
+        return try JSONDecoder().decode([CustomListSummaryDTO].self, from: data)
+    }
+
+    func fetchCustomList(userId: String, listId: String) async throws -> CustomListDetailDTO {
+        guard let encodedUserId = userId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed),
+              let encodedListId = listId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed),
+              let url = URL(string: "\(baseURL)/users/\(encodedUserId)/lists/\(encodedListId)") else {
+            throw APIError.invalidURL
+        }
+
+        let (data, response) = try await URLSession.shared.data(from: url)
+        if let httpResponse = response as? HTTPURLResponse,
+           !(200...299).contains(httpResponse.statusCode) {
+            throw APIError.serverError(statusCode: httpResponse.statusCode)
+        }
+        return try JSONDecoder().decode(CustomListDetailDTO.self, from: data)
+    }
+
+    func createCustomList(userId: String, name: String) async throws -> CustomListDetailDTO {
+        guard let encodedUserId = userId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed),
+              let url = URL(string: "\(baseURL)/users/\(encodedUserId)/lists") else {
+            throw APIError.invalidURL
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONEncoder().encode(CreateCustomListRequest(name: name))
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        if let httpResponse = response as? HTTPURLResponse,
+           !(200...299).contains(httpResponse.statusCode) {
+            throw APIError.serverError(statusCode: httpResponse.statusCode)
+        }
+        return try JSONDecoder().decode(CustomListDetailDTO.self, from: data)
+    }
+
+    func renameCustomList(userId: String, listId: String, name: String) async throws -> CustomListDetailDTO {
+        guard let encodedUserId = userId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed),
+              let encodedListId = listId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed),
+              let url = URL(string: "\(baseURL)/users/\(encodedUserId)/lists/\(encodedListId)") else {
+            throw APIError.invalidURL
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "PATCH"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONEncoder().encode(RenameCustomListRequest(name: name))
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        if let httpResponse = response as? HTTPURLResponse,
+           !(200...299).contains(httpResponse.statusCode) {
+            throw APIError.serverError(statusCode: httpResponse.statusCode)
+        }
+        return try JSONDecoder().decode(CustomListDetailDTO.self, from: data)
+    }
+
+    func deleteCustomList(userId: String, listId: String) async throws {
+        guard let encodedUserId = userId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed),
+              let encodedListId = listId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed),
+              let url = URL(string: "\(baseURL)/users/\(encodedUserId)/lists/\(encodedListId)") else {
+            throw APIError.invalidURL
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "DELETE"
+
+        let (_, response) = try await URLSession.shared.data(for: request)
+        if let httpResponse = response as? HTTPURLResponse,
+           !(200...299).contains(httpResponse.statusCode) {
+            throw APIError.serverError(statusCode: httpResponse.statusCode)
+        }
+    }
+
+    func addMovieToCustomList(userId: String, listId: String, movieId: Int) async throws -> CustomListMutationResponseDTO {
+        guard let encodedUserId = userId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed),
+              let encodedListId = listId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed),
+              let url = URL(string: "\(baseURL)/users/\(encodedUserId)/lists/\(encodedListId)/movies") else {
+            throw APIError.invalidURL
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONEncoder().encode(CustomListMovieRequest(movie_id: movieId))
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        if let httpResponse = response as? HTTPURLResponse,
+           !(200...299).contains(httpResponse.statusCode) {
+            throw APIError.serverError(statusCode: httpResponse.statusCode)
+        }
+        return try JSONDecoder().decode(CustomListMutationResponseDTO.self, from: data)
+    }
+
+    func removeMovieFromCustomList(userId: String, listId: String, movieId: Int) async throws -> CustomListMutationResponseDTO {
+        guard let encodedUserId = userId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed),
+              let encodedListId = listId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed),
+              let url = URL(string: "\(baseURL)/users/\(encodedUserId)/lists/\(encodedListId)/movies/\(movieId)") else {
+            throw APIError.invalidURL
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "DELETE"
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        if let httpResponse = response as? HTTPURLResponse,
+           !(200...299).contains(httpResponse.statusCode) {
+            throw APIError.serverError(statusCode: httpResponse.statusCode)
+        }
+        return try JSONDecoder().decode(CustomListMutationResponseDTO.self, from: data)
+    }
 }
 
 struct MovieDTO: Codable {
@@ -282,4 +417,25 @@ struct UserDataDTO: Codable {
     let neutral: [Int]
     let watchlist: [Int]
     let history: [Int]
+}
+
+struct CustomListSummaryDTO: Codable {
+    let list_id: String
+    let name: String
+    let movie_count: Int
+    let created_at: String
+    let updated_at: String
+}
+
+struct CustomListDetailDTO: Codable {
+    let list_id: String
+    let name: String
+    let movie_ids: [Int]
+    let created_at: String
+    let updated_at: String
+}
+
+struct CustomListMutationResponseDTO: Codable {
+    let message: String
+    let list: CustomListDetailDTO
 }

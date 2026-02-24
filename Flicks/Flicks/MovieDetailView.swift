@@ -3,13 +3,18 @@ import UIKit
 import CoreGraphics
 
 struct MovieDetailView: View {
+    let movie: Movie? = nil
     let title: String
     let subtitle: String
     let imageName: String
     let friendInitials: [String]
 
     @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var userState: UserState
     @State private var appearSpin = true
+    @State private var showAddToListDialog = false
+    @State private var showCreateListAlert = false
+    @State private var newListName = ""
 
     // Cache the gradient so it doesn’t recompute often
     @State private var backgroundGradient: LinearGradient?
@@ -111,6 +116,20 @@ struct MovieDetailView: View {
                                             .foregroundStyle(.secondary)
                                     }
 
+                                    if movie != nil {
+                                        VStack(alignment: .leading, spacing: 10) {
+                                            Text("Save")
+                                                .font(.headline)
+                                            Button {
+                                                showAddToListDialog = true
+                                            } label: {
+                                                Label("Add to Custom List", systemImage: "list.bullet.badge.plus")
+                                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                            }
+                                            .buttonStyle(.borderedProminent)
+                                        }
+                                    }
+
                                     // VStack(alignment: .leading, spacing: 8) {
                                     //    Text("Friends")
                                     //        .font(.headline)
@@ -150,6 +169,9 @@ struct MovieDetailView: View {
                         appearSpin = false
                     }
                     loadImageAndAnalyze()
+                    if movie != nil, userState.customLists.isEmpty {
+                        Task { await userState.fetchCustomLists() }
+                    }
                 }
                 // If imageName can change while presented, recompute
                 .onChange(of: imageName) { _ in
@@ -157,6 +179,41 @@ struct MovieDetailView: View {
                     backgroundColors.removeAll()
                     backgroundGradient = nil
                     loadImageAndAnalyze()
+                }
+                .confirmationDialog("Add to List", isPresented: $showAddToListDialog) {
+                    if userState.customLists.isEmpty {
+                        Button("Create New List") {
+                            showCreateListAlert = true
+                        }
+                    } else {
+                        ForEach(userState.customLists) { list in
+                            Button(list.name) {
+                                guard let movie else { return }
+                                Task { await userState.addMovie(movie, toCustomList: list.id) }
+                            }
+                        }
+                        Button("Create New List") {
+                            showCreateListAlert = true
+                        }
+                    }
+                    Button("Cancel", role: .cancel) {}
+                } message: {
+                    Text("Choose a list for this movie.")
+                }
+                .alert("Create New List", isPresented: $showCreateListAlert) {
+                    TextField("List name", text: $newListName)
+                    Button("Create") {
+                        let trimmed = newListName.trimmingCharacters(in: .whitespacesAndNewlines)
+                        guard !trimmed.isEmpty, let movie else { return }
+                        Task {
+                            if let newList = await userState.createCustomList(name: trimmed) {
+                                await userState.addMovie(movie, toCustomList: newList.id)
+                            }
+                        }
+                    }
+                    Button("Cancel", role: .cancel) {}
+                } message: {
+                    Text("Create a private custom list and add this movie.")
                 }
             }
         }
@@ -229,9 +286,11 @@ private extension Array {
 
 #Preview {
     MovieDetailView(
+        movie: nil,
         title: "Everything Everywhere All At Once",
         subtitle: "Action · Comedy · Sci‑Fi",
         imageName: "spiderverse.jpg",
         friendInitials: ["SK", "AB", "JK"]
     )
+    .environmentObject(UserState())
 }

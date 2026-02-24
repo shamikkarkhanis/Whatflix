@@ -49,6 +49,17 @@ struct MenuButton: View {
                         )
                     )
                     .zIndex(1)
+
+                    NavigationLink(destination: ListsView()) {
+                        MenuPill(icon: "list.bullet.rectangle", title: "Lists")
+                    }
+                    .transition(
+                        .asymmetric(
+                            insertion: .move(edge: .bottom).combined(with: .opacity).combined(with: .scale(scale: 0.5)),
+                            removal: .move(edge: .bottom).combined(with: .opacity).combined(with: .scale(scale: 0.5))
+                        )
+                    )
+                    .zIndex(0)
                 }
                 
                 // Main Toggle Pill
@@ -69,7 +80,7 @@ struct MenuButton: View {
                         .onTapGesture(perform: toggleMenu)
                 )
                 .buttonStyle(BouncyButtonStyle())
-                .zIndex(0)
+                .zIndex(-1)
             }
             .padding(.bottom, 10)
         }

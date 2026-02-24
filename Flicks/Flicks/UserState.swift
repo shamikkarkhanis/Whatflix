@@ -1,5 +1,13 @@
 import SwiftUI
 
+struct CustomMovieList: Identifiable, Hashable {
+    let id: String
+    var name: String
+    var movies: [Movie]
+    var createdAt: String
+    var updatedAt: String
+}
+
 @MainActor
 class UserState: ObservableObject {
     @Published var profileName: String = ""
@@ -12,6 +20,7 @@ class UserState: ObservableObject {
     @Published var likedMovies: [Movie] = []
     @Published var neutralMovies: [Movie] = []
     @Published var dislikedMovies: [Movie] = []
+    @Published var customLists: [CustomMovieList] = []
     
     // Computed properties for queue visualization
     var queueCount: Int {
@@ -51,6 +60,7 @@ class UserState: ObservableObject {
         Task {
             await fetchUserProfile()
             await fetchPersonas()
+            await fetchCustomLists()
         }
     }
     
@@ -197,6 +207,155 @@ class UserState: ObservableObject {
         } catch {
             print("Failed to fetch personas: \(error)")
         }
+    }
+
+    // MARK: - Custom Lists
+
+    func fetchCustomLists() async {
+        guard let userId = activeUserId else { return }
+        do {
+            let summaries = try await APIService.shared.fetchCustomLists(userId: userId)
+            var hydratedLists: [CustomMovieList] = []
+            for summary in summaries {
+                do {
+                    let detail = try await APIService.shared.fetchCustomList(
+                        userId: userId,
+                        listId: summary.list_id
+                    )
+                    let hydrated = try await hydrateCustomList(detail: detail)
+                    hydratedLists.append(hydrated)
+                } catch {
+                    print("Failed to hydrate custom list \(summary.list_id): \(error)")
+                    hydratedLists.append(
+                        CustomMovieList(
+                            id: summary.list_id,
+                            name: summary.name,
+                            movies: [],
+                            createdAt: summary.created_at,
+                            updatedAt: summary.updated_at
+                        )
+                    )
+                }
+            }
+            self.customLists = hydratedLists
+        } catch {
+            print("Failed to fetch custom lists: \(error)")
+        }
+    }
+
+    func fetchCustomListDetail(listId: String) async {
+        guard let userId = activeUserId else { return }
+        do {
+            let detail = try await APIService.shared.fetchCustomList(userId: userId, listId: listId)
+            let hydrated = try await hydrateCustomList(detail: detail)
+            upsertCustomList(hydrated)
+        } catch {
+            print("Failed to fetch custom list detail: \(error)")
+        }
+    }
+
+    @discardableResult
+    func createCustomList(name: String) async -> CustomMovieList? {
+        guard let userId = activeUserId else { return nil }
+        do {
+            let detail = try await APIService.shared.createCustomList(userId: userId, name: name)
+            let hydrated = try await hydrateCustomList(detail: detail)
+            upsertCustomList(hydrated)
+            return hydrated
+        } catch {
+            print("Failed to create custom list: \(error)")
+            return nil
+        }
+    }
+
+    func renameCustomList(listId: String, name: String) async {
+        guard let userId = activeUserId else { return }
+        do {
+            let detail = try await APIService.shared.renameCustomList(userId: userId, listId: listId, name: name)
+            let hydrated = try await hydrateCustomList(detail: detail)
+            upsertCustomList(hydrated)
+        } catch {
+            print("Failed to rename custom list: \(error)")
+        }
+    }
+
+    func deleteCustomList(listId: String) async {
+        guard let userId = activeUserId else { return }
+        do {
+            try await APIService.shared.deleteCustomList(userId: userId, listId: listId)
+            customLists.removeAll { $0.id == listId }
+        } catch {
+            print("Failed to delete custom list: \(error)")
+        }
+    }
+
+    func addMovie(_ movie: Movie, toCustomList listId: String) async {
+        guard let userId = activeUserId else { return }
+        do {
+            let resp = try await APIService.shared.addMovieToCustomList(
+                userId: userId,
+                listId: listId,
+                movieId: movie.tmdbId
+            )
+            let hydrated = try await hydrateCustomList(detail: resp.list)
+            upsertCustomList(hydrated)
+        } catch {
+            print("Failed to add movie to custom list: \(error)")
+        }
+    }
+
+    func removeMovie(_ movie: Movie, fromCustomList listId: String) async {
+        guard let userId = activeUserId else { return }
+        do {
+            let resp = try await APIService.shared.removeMovieFromCustomList(
+                userId: userId,
+                listId: listId,
+                movieId: movie.tmdbId
+            )
+            let hydrated = try await hydrateCustomList(detail: resp.list)
+            upsertCustomList(hydrated)
+        } catch {
+            print("Failed to remove movie from custom list: \(error)")
+        }
+    }
+
+    private func hydrateCustomList(detail: CustomListDetailDTO) async throws -> CustomMovieList {
+        var hydratedMovies: [Movie] = []
+        if !detail.movie_ids.isEmpty {
+            let dtos = try await APIService.shared.fetchMovies(ids: detail.movie_ids)
+            let movieMap = Dictionary(uniqueKeysWithValues: dtos.compactMap { dto -> (Int, Movie)? in
+                guard let backdrop = dto.backdrop_path, !backdrop.isEmpty else { return nil }
+                let id = Int(dto.movie_id) ?? 0
+                let movie = Movie(
+                    tmdbId: id,
+                    title: dto.title,
+                    subtitle: dto.genres?.joined(separator: " · ") ?? "Movie",
+                    imageName: "https://image.tmdb.org/t/p/original\(backdrop)",
+                    friendInitials: [],
+                    dateAdded: Date(),
+                    dateWatched: Date()
+                )
+                return (id, movie)
+            })
+            hydratedMovies = detail.movie_ids.compactMap { movieMap[$0] }
+        }
+
+        return CustomMovieList(
+            id: detail.list_id,
+            name: detail.name,
+            movies: hydratedMovies,
+            createdAt: detail.created_at,
+            updatedAt: detail.updated_at
+        )
+    }
+
+    private func upsertCustomList(_ list: CustomMovieList) {
+        if let idx = customLists.firstIndex(where: { $0.id == list.id }) {
+            customLists[idx] = list
+        } else {
+            customLists.append(list)
+        }
+        customLists.sort { $0.updatedAt > $1.updatedAt }
     }
 
     private func mapColor(_ name: String) -> Color {

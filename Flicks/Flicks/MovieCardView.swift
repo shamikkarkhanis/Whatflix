@@ -88,6 +88,7 @@ struct MovieCardView: View {
         .buttonStyle(.plain)
         .sheet(isPresented: $showDetail) {
             MovieDetailView(
+                movie: nil,
                 title: title,
                 subtitle: subtitle,
                 imageName: imageName,

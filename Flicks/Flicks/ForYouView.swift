@@ -178,6 +178,7 @@ struct ForYouView: View {
         }
         .sheet(item: $selectedMovie) { movie in
             MovieDetailView(
+                movie: movie,
                 title: movie.title,
                 subtitle: movie.subtitle,
                 imageName: movie.imageName,
