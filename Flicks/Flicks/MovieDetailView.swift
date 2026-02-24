@@ -3,7 +3,7 @@ import UIKit
 import CoreGraphics
 
 struct MovieDetailView: View {
-    let movie: Movie? = nil
+    let movie: Movie?
     let title: String
     let subtitle: String
     let imageName: String
@@ -27,6 +27,20 @@ struct MovieDetailView: View {
 
     // A sensible maximum content width to avoid overly wide layouts on larger devices
     private let maxContentWidth: CGFloat = 700
+
+    init(
+        movie: Movie? = nil,
+        title: String,
+        subtitle: String,
+        imageName: String,
+        friendInitials: [String]
+    ) {
+        self.movie = movie
+        self.title = title
+        self.subtitle = subtitle
+        self.imageName = imageName
+        self.friendInitials = friendInitials
+    }
 
     var body: some View {
         GeometryReader { proxy in
