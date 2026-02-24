@@ -1,6 +1,7 @@
 import argparse
 import json
 import os
+import sqlite3
 import time
 import logging
 
@@ -12,6 +13,159 @@ logger = logging.getLogger("recc-engine.user")
 
 # Global model instance
 _embedding_model = None
+_USER_PROFILE_DB_PATH = os.getenv("USER_PROFILE_DB_PATH", "data/user_profiles.sqlite3")
+_USER_PROFILE_TABLE = "user_profiles"
+
+
+def _ensure_profile_data_shape(profile):
+    if "data" not in profile or not isinstance(profile["data"], dict):
+        profile["data"] = {}
+
+    required_keys = ["liked", "disliked", "neutral", "watchlist", "history", "shown"]
+    for key in required_keys:
+        if key not in profile["data"] or not isinstance(profile["data"][key], list):
+            profile["data"][key] = []
+
+    if "genres" not in profile or not isinstance(profile["genres"], list):
+        profile["genres"] = []
+    if "keywords" not in profile:
+        profile["keywords"] = {}
+    if "personas" not in profile or not isinstance(profile["personas"], list):
+        profile["personas"] = []
+
+    return profile
+
+
+def _ensure_user_profile_db():
+    db_dir = os.path.dirname(_USER_PROFILE_DB_PATH)
+    if db_dir:
+        os.makedirs(db_dir, exist_ok=True)
+
+    with sqlite3.connect(_USER_PROFILE_DB_PATH) as conn:
+        conn.execute(
+            f"""
+            CREATE TABLE IF NOT EXISTS {_USER_PROFILE_TABLE} (
+                user_id TEXT PRIMARY KEY,
+                profile_json TEXT NOT NULL,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )
+            """
+        )
+        conn.commit()
+
+
+def _user_id_from_identifier(identifier, profile=None):
+    if profile and isinstance(profile, dict):
+        if profile.get("id"):
+            return str(profile["id"])
+        if profile.get("name"):
+            return str(profile["name"])
+
+    if not isinstance(identifier, str):
+        raise ValueError("User identifier must be a string")
+
+    if identifier.endswith(".json"):
+        return os.path.splitext(os.path.basename(identifier))[0]
+
+    return identifier
+
+
+def _read_json_profile_file(path):
+    with open(path, "r") as f:
+        data = json.load(f)
+
+    if isinstance(data, list):
+        if not data:
+            raise ValueError(f"{path} is empty.")
+        profile = data[0]
+    elif isinstance(data, dict):
+        profile = data
+    else:
+        raise ValueError(f"{path} must be a JSON object or a list of objects.")
+
+    return _ensure_profile_data_shape(profile)
+
+
+def user_profile_exists(user_id):
+    resolved_user_id = _user_id_from_identifier(user_id)
+    _ensure_user_profile_db()
+    with sqlite3.connect(_USER_PROFILE_DB_PATH) as conn:
+        row = conn.execute(
+            f"SELECT 1 FROM {_USER_PROFILE_TABLE} WHERE user_id = ?",
+            (resolved_user_id,),
+        ).fetchone()
+        return row is not None
+
+
+def delete_user_profile(user_id):
+    resolved_user_id = _user_id_from_identifier(user_id)
+    _ensure_user_profile_db()
+    with sqlite3.connect(_USER_PROFILE_DB_PATH) as conn:
+        conn.execute(
+            f"DELETE FROM {_USER_PROFILE_TABLE} WHERE user_id = ?",
+            (resolved_user_id,),
+        )
+        conn.commit()
+
+
+def migrate_legacy_json_profiles(users_dir="users", delete_json=False):
+    if not os.path.isdir(users_dir):
+        return {"migrated": 0, "skipped": 0, "deleted": 0}
+
+    migrated = 0
+    skipped = 0
+    deleted = 0
+
+    for name in os.listdir(users_dir):
+        if not name.endswith(".json"):
+            continue
+
+        path = os.path.join(users_dir, name)
+        try:
+            profile = _read_json_profile_file(path)
+            user_id = _user_id_from_identifier(path, profile=profile)
+            _save_user_profile_to_sqlite(user_id, profile)
+            migrated += 1
+            if delete_json:
+                os.remove(path)
+                deleted += 1
+        except Exception as exc:
+            skipped += 1
+            logger.warning("Skipping legacy profile %s during migration: %s", path, exc)
+
+    return {"migrated": migrated, "skipped": skipped, "deleted": deleted}
+
+
+def _load_user_profile_from_sqlite(user_id):
+    _ensure_user_profile_db()
+    with sqlite3.connect(_USER_PROFILE_DB_PATH) as conn:
+        row = conn.execute(
+            f"SELECT profile_json FROM {_USER_PROFILE_TABLE} WHERE user_id = ?",
+            (user_id,),
+        ).fetchone()
+    if not row:
+        raise FileNotFoundError(f"User profile not found for {user_id}")
+
+    profile = json.loads(row[0])
+    return _ensure_profile_data_shape(profile)
+
+
+def _save_user_profile_to_sqlite(user_id, profile):
+    _ensure_user_profile_db()
+    payload = json.dumps(_ensure_profile_data_shape(profile), ensure_ascii=True)
+    with sqlite3.connect(_USER_PROFILE_DB_PATH) as conn:
+        conn.execute(
+            f"""
+            INSERT INTO {_USER_PROFILE_TABLE} (user_id, profile_json)
+            VALUES (?, ?)
+            ON CONFLICT(user_id) DO UPDATE SET
+              profile_json = excluded.profile_json,
+              updated_at = CURRENT_TIMESTAMP
+            """,
+            (user_id, payload),
+        )
+        conn.commit()
 
 def get_embedding_model():
     global _embedding_model
@@ -32,58 +186,12 @@ def build_user_text(profile):
 
 
 def load_user_profile(path):
-    with open(path, "r") as f:
-        data = json.load(f)
-    
-    if isinstance(data, list):
-        if not data:
-            raise ValueError(f"{path} is empty.")
-        profile = data[0]
-    elif isinstance(data, dict):
-        profile = data
-    else:
-        raise ValueError(f"{path} must be a JSON object or a list of objects.")
-    
-    # Ensure data structure exists
-    if "data" not in profile:
-        profile["data"] = {
-            "liked": [],
-            "disliked": [],
-            "neutral": [],
-            "watchlist": [],
-            "history": [],
-            "shown": []
-        }
-    else:
-        # Ensure all keys exist
-        required_keys = ["liked", "disliked", "neutral", "watchlist", "history", "shown"]
-        for key in required_keys:
-            if key not in profile["data"]:
-                profile["data"][key] = []
-                
-    return profile
+    user_id = _user_id_from_identifier(path)
+    return _load_user_profile_from_sqlite(user_id)
 
 def save_user_profile(path, profile):
-    # Check if original file was a list (simple heuristic or we could store this state)
-    # For now, we follow the convention of the existing files which seem to be lists.
-    # We can check the file content if we want to be 100% sure, but let's assume list for now 
-    # if that's the project standard, or check if the path exists and read it.
-    
-    # We will read the file first to preserve the structure (list vs dict)
-    is_list = True
-    if os.path.exists(path):
-        with open(path, "r") as f:
-            try:
-                data = json.load(f)
-                if isinstance(data, dict):
-                    is_list = False
-            except:
-                pass 
-    
-    output_data = [profile] if is_list else profile
-    
-    with open(path, "w") as f:
-        json.dump(output_data, f, indent=4)
+    user_id = _user_id_from_identifier(path, profile=profile)
+    _save_user_profile_to_sqlite(user_id, profile)
 
 def update_user_data(user_path, movie_id, action):
     profile = load_user_profile(user_path)
@@ -328,7 +436,7 @@ def get_movies_by_ids(movie_ids):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--user-profile", default="users/user_1.json")
+    parser.add_argument("--user-id", default="user_1")
     parser.add_argument("--encode", action="store_true")
     parser.add_argument("--top-k", type=int, default=10)
     parser.add_argument("--genres", help="Comma-separated list of genres to filter by")
@@ -336,23 +444,23 @@ def main():
 
 
     if args.encode:
-        profile = load_user_profile(args.user_profile)
+        profile = load_user_profile(args.user_id)
         query_text = build_user_text(profile)
         embedding = encode_user_text(query_text)
-        user_id = profile.get("id") or os.path.splitext(os.path.basename(args.user_profile))[0]
+        user_id = profile.get("id") or args.user_id
         upsert_user_profile(user_id, query_text, embedding, profile)
     else:
-        user_id = os.path.splitext(os.path.basename(args.user_profile))[0]
-        embedding = [get_profile_from_db(user_id)["embeddings"][0]]
+        user_id = args.user_id
+        embedding = [get_profile_from_db(args.user_id)["embeddings"][0]]
 
     filters = []
     if args.genres:
         filters = [g.strip() for g in args.genres.split(",")]
     else:
-        filters = load_user_profile(args.user_profile).get("genres", [])
+        filters = load_user_profile(args.user_id).get("genres", [])
 
     # pull user embedding from chroma
-    user_keywords = load_user_profile(args.user_profile).get("keywords", [])
+    user_keywords = load_user_profile(args.user_id).get("keywords", [])
 
     results = search_movies(embedding, args.top_k, filters=filters, user_keywords=user_keywords)
     for idx, movie_id in enumerate(results["ids"][0]):

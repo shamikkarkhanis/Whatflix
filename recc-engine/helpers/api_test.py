@@ -1,9 +1,15 @@
 import json
 import os
+import sys
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from pathlib import Path
 
 from dotenv import load_dotenv
+
+ROOT_DIR = Path(__file__).resolve().parents[1]
+if str(ROOT_DIR) not in sys.path:
+    sys.path.insert(0, str(ROOT_DIR))
 
 from tmdb_api import TMDBClient
 

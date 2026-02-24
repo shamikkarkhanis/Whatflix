@@ -1,8 +1,8 @@
 import SwiftUI
 
 struct Movie: Identifiable, Hashable {
-    let id = UUID()
     let tmdbId: Int
+    var id: Int { tmdbId }
     let title: String
     let subtitle: String
     let imageName: String

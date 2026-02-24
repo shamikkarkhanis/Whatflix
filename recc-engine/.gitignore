@@ -1,6 +1,10 @@
 .env
 /venv
+/.venv
 data/
+data/user_profiles.sqlite3
+data/user_profiles.sqlite3-shm
+data/user_profiles.sqlite3-wal
 .python-version
 __pycache__/
 chroma/

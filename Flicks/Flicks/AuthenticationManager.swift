@@ -37,7 +37,7 @@ class AuthenticationManager: NSObject, ObservableObject {
     func loginAsDev() {
         guard Configuration.isDevelopmentMode else { return }
         saveToken("dev-session-token")
-        authenticatedUserId = "Shamik"
+        authenticatedUserId = Configuration.devUserId
         isAuthenticated = true
     }
     
