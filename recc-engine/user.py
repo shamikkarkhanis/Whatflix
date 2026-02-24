@@ -71,10 +71,6 @@ def _user_id_from_identifier(identifier, profile=None):
     return identifier
 
 
-def _legacy_profile_path_for_user(user_id):
-    return f"users/{user_id}.json"
-
-
 def _read_json_profile_file(path):
     with open(path, "r") as f:
         data = json.load(f)
@@ -99,9 +95,7 @@ def user_profile_exists(user_id):
             f"SELECT 1 FROM {_USER_PROFILE_TABLE} WHERE user_id = ?",
             (resolved_user_id,),
         ).fetchone()
-        if row:
-            return True
-    return os.path.exists(_legacy_profile_path_for_user(resolved_user_id))
+        return row is not None
 
 
 def delete_user_profile(user_id):
@@ -193,20 +187,7 @@ def build_user_text(profile):
 
 def load_user_profile(path):
     user_id = _user_id_from_identifier(path)
-
-    try:
-        return _load_user_profile_from_sqlite(user_id)
-    except FileNotFoundError:
-        pass
-
-    legacy_path = path if isinstance(path, str) and path.endswith(".json") else _legacy_profile_path_for_user(user_id)
-    if not os.path.exists(legacy_path):
-        raise FileNotFoundError(f"User profile not found for {user_id}")
-
-    profile = _read_json_profile_file(legacy_path)
-    _save_user_profile_to_sqlite(user_id, profile)
-    logger.info("Migrated legacy JSON profile to SQLite for user_id=%s", user_id)
-    return profile
+    return _load_user_profile_from_sqlite(user_id)
 
 def save_user_profile(path, profile):
     user_id = _user_id_from_identifier(path, profile=profile)
@@ -455,7 +436,7 @@ def get_movies_by_ids(movie_ids):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--user-profile", default="users/user_1.json")
+    parser.add_argument("--user-id", default="user_1")
     parser.add_argument("--encode", action="store_true")
     parser.add_argument("--top-k", type=int, default=10)
     parser.add_argument("--genres", help="Comma-separated list of genres to filter by")
@@ -463,23 +444,23 @@ def main():
 
 
     if args.encode:
-        profile = load_user_profile(args.user_profile)
+        profile = load_user_profile(args.user_id)
         query_text = build_user_text(profile)
         embedding = encode_user_text(query_text)
-        user_id = profile.get("id") or os.path.splitext(os.path.basename(args.user_profile))[0]
+        user_id = profile.get("id") or args.user_id
         upsert_user_profile(user_id, query_text, embedding, profile)
     else:
-        user_id = os.path.splitext(os.path.basename(args.user_profile))[0]
-        embedding = [get_profile_from_db(user_id)["embeddings"][0]]
+        user_id = args.user_id
+        embedding = [get_profile_from_db(args.user_id)["embeddings"][0]]
 
     filters = []
     if args.genres:
         filters = [g.strip() for g in args.genres.split(",")]
     else:
-        filters = load_user_profile(args.user_profile).get("genres", [])
+        filters = load_user_profile(args.user_id).get("genres", [])
 
     # pull user embedding from chroma
-    user_keywords = load_user_profile(args.user_profile).get("keywords", [])
+    user_keywords = load_user_profile(args.user_id).get("keywords", [])
 
     results = search_movies(embedding, args.top_k, filters=filters, user_keywords=user_keywords)
     for idx, movie_id in enumerate(results["ids"][0]):

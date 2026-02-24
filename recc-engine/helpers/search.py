@@ -1,11 +1,18 @@
 import json
+import os
+import sys
+from pathlib import Path
 
 import chromadb
+
+ROOT_DIR = Path(__file__).resolve().parents[1]
+if str(ROOT_DIR) not in sys.path:
+    sys.path.insert(0, str(ROOT_DIR))
 
 from user import build_user_text, encode_user_text, load_user_profile
 
 
-profile = load_user_profile("user_1.json")
+profile = load_user_profile(os.getenv("SEARCH_USER_ID", "user_1"))
 query_text = build_user_text(profile)
 query_embedding = encode_user_text(query_text)
 

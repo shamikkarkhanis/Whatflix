@@ -7,12 +7,12 @@
 
 # Local vector DB runtime data
 chroma/
+recc-engine/data/user_profiles.sqlite3
+recc-engine/data/user_profiles.sqlite3-shm
+recc-engine/data/user_profiles.sqlite3-wal
 
 # Xcode user-specific files
 Flicks/Flicks.xcodeproj/xcuserdata/
 Flicks/Flicks.xcodeproj/project.xcworkspace/xcuserdata/
 *.xcuserstate
 *.xcbkptlist
-
-# Generated user-profile lock files
-recc-engine/users/*.lock

@@ -27,7 +27,7 @@ run:
 	$(UV) run uvicorn app:app --host 0.0.0.0 --port 8000 --reload
 
 migrate-users:
-	$(UV) run python migrate_user_profiles_to_sqlite.py --delete-json
+	$(UV) run python helpers/migrate_user_profiles_to_sqlite.py --delete-json
 
 test: test-backend
 
@@ -47,4 +47,5 @@ test-syntax:
 		routes_catalog.py \
 		routes_users.py \
 		user_services.py \
-		tests/test_app_routes.py
+		tests/test_app_routes.py \
+		tests/test_sqlite_profile_integration.py

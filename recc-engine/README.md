@@ -19,6 +19,8 @@ To migrate legacy `users/*.json` profiles and remove the JSON files:
 make migrate-users
 ```
 
+Non-runtime scripts (data fetchers, DB inspectors, API workflow helpers, migrations) live in `helpers/`.
+
 ### Tests
 
 ```bash

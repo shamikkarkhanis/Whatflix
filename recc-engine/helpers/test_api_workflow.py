@@ -5,15 +5,18 @@ import os
 import signal
 import json
 import sqlite3
+from pathlib import Path
 
 BASE_URL = "http://localhost:8000"
 TEST_USER = "test_bot_999"
 TEST_MOVIE_ID = 27205  # Inception
+ROOT_DIR = Path(__file__).resolve().parents[1]
 
 def start_server():
     print("Starting server...")
     # Use the existing run_server.sh script
-    process = subprocess.Popen(["./run_server.sh"], 
+    process = subprocess.Popen(["./run_server.sh"],
+                             cwd=ROOT_DIR,
                              stdout=subprocess.PIPE, 
                              stderr=subprocess.PIPE,
                              preexec_fn=os.setsid)
@@ -102,7 +105,7 @@ def main():
     print("\nShutting down server...")
     os.killpg(os.getpgid(server_process.pid), signal.SIGTERM)
     
-    db_path = "data/user_profiles.sqlite3"
+    db_path = ROOT_DIR / "data/user_profiles.sqlite3"
     if os.path.exists(db_path):
         with sqlite3.connect(db_path) as conn:
             conn.execute("DELETE FROM user_profiles WHERE user_id = ?", (TEST_USER,))
