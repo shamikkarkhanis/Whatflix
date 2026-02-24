@@ -1,24 +1,40 @@
-PYTHON ?= python3
+UV ?= uv
 
-.PHONY: help test test-backend test-routes test-syntax
+.PHONY: help sync sync-dev lock run test test-backend test-routes test-syntax
 
 help:
 	@echo "Available targets:"
+	@echo "  make sync         - Install runtime dependencies via uv"
+	@echo "  make sync-dev     - Install runtime + dev/test dependencies via uv"
+	@echo "  make lock         - Refresh uv.lock"
+	@echo "  make run          - Run API server with uv"
 	@echo "  make test         - Run backend test suite"
 	@echo "  make test-backend - Run all backend unittest tests"
 	@echo "  make test-routes  - Run lightweight route tests"
 	@echo "  make test-syntax  - Python syntax check for backend app modules/tests"
 
+sync:
+	$(UV) sync
+
+sync-dev:
+	$(UV) sync --extra test --extra dev
+
+lock:
+	$(UV) lock
+
+run:
+	$(UV) run uvicorn app:app --host 0.0.0.0 --port 8000 --reload
+
 test: test-backend
 
 test-backend:
-	$(PYTHON) -m unittest discover -s tests -p "test_*.py" -v
+	$(UV) run python -m unittest discover -s tests -p "test_*.py" -v
 
 test-routes:
-	$(PYTHON) -m unittest tests.test_app_routes -v
+	$(UV) run python -m unittest tests.test_app_routes -v
 
 test-syntax:
-	$(PYTHON) -m py_compile \
+	$(UV) run python -m py_compile \
 		app.py \
 		app_shared.py \
 		api_helpers.py \
