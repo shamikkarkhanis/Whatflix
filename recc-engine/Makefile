@@ -1,6 +1,6 @@
 UV ?= uv
 
-.PHONY: help sync sync-dev lock run migrate-users test test-backend test-routes test-syntax
+.PHONY: help sync sync-dev lock run migrate-users docker-build docker-up docker-down docker-logs test test-backend test-routes test-syntax
 
 help:
 	@echo "Available targets:"
@@ -9,6 +9,10 @@ help:
 	@echo "  make lock         - Refresh uv.lock"
 	@echo "  make run          - Run API server with uv"
 	@echo "  make migrate-users - Migrate legacy users/*.json profiles to SQLite"
+	@echo "  make docker-build - Build Docker image via docker compose"
+	@echo "  make docker-up    - Start API container with mounted state"
+	@echo "  make docker-down  - Stop API container"
+	@echo "  make docker-logs  - Tail API container logs"
 	@echo "  make test         - Run backend test suite"
 	@echo "  make test-backend - Run all backend unittest tests"
 	@echo "  make test-routes  - Run lightweight route tests"
@@ -28,6 +32,18 @@ run:
 
 migrate-users:
 	$(UV) run python helpers/migrate_user_profiles_to_sqlite.py --delete-json
+
+docker-build:
+	docker compose build
+
+docker-up:
+	docker compose up --build
+
+docker-down:
+	docker compose down
+
+docker-logs:
+	docker compose logs -f app
 
 test: test-backend
 
