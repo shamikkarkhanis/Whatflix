@@ -62,6 +62,8 @@ test-syntax:
 		routes_auth.py \
 		routes_catalog.py \
 		routes_users.py \
+		list_services.py \
 		user_services.py \
 		tests/test_app_routes.py \
-		tests/test_sqlite_profile_integration.py
+		tests/test_sqlite_profile_integration.py \
+		tests/test_custom_lists_integration.py

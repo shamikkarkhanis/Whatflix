@@ -29,6 +29,33 @@ class AppleAuthRequest(BaseModel):
 class BatchMovieRequest(BaseModel):
     movie_ids: List[int]
 
+class CreateCustomListRequest(BaseModel):
+    name: str
+
+
+class RenameCustomListRequest(BaseModel):
+    name: str
+
+
+class CustomListMovieRequest(BaseModel):
+    movie_id: int
+
+
+class CustomListSummary(BaseModel):
+    list_id: str
+    name: str
+    movie_count: int
+    created_at: str
+    updated_at: str
+
+
+class CustomListDetail(BaseModel):
+    list_id: str
+    name: str
+    movie_ids: List[int]
+    created_at: str
+    updated_at: str
+
 
 class UserCreate(BaseModel):
     name: str
